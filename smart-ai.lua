@@ -4363,7 +4363,7 @@ function SmartAI:getAoeValueTo(card, to , from)
 			end
 		end
 		
-		if to:hasSkills("longdan+chongzhen") and self:isEnemy(to) then
+		if to:hasSkill("longdan") and to:hasSkill("chongzhen") and self:isEnemy(to) then
 			if card:isKindOf("ArcheryAttack") and getCardsNum("Slash", to) >= 1 then
 				value = value + 15
 			elseif card:isKindOf("SavageAssault") and getCardsNum("Jink", to) >= 1 then
@@ -4894,8 +4894,8 @@ function getBestHp(player)
 			return math.max( (player:isLord() and 3 or 2) ,player:getMaxHp() - dec)
 		end
 	end
-	if player:hasSkills("renjie+baiyin") and player:getMark("baiyin") == 0 then return (player:getMaxHp() - 1) end
-	if player:hasSkills("quanji+zili") and player:getMark("zili") == 0 then return (player:getMaxHp() - 1) end
+	if player:hasSkill("renjie") and player:hasSkill("baiyin") and player:getMark("baiyin") == 0 then return (player:getMaxHp() - 1) end
+	if player:hasSkill("quanji") and player:hasSkill("zili") and player:getMark("zili") == 0 then return (player:getMaxHp() - 1) end
 	return player:getMaxHp()
 end
 
