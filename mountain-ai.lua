@@ -21,10 +21,10 @@ local function card_for_qiaobian(self, who, return_prompt)
 		if not target and not equips:isEmpty() and self:hasSkills(sgs.lose_equip_skill, who) then
 			for _, equip in sgs.qlist(equips) do
 				if equip:isKindOf("OffensiveHorse") then card = equip break
+				elseif equip:isKindOf("Weapon") then card = equip break
 				elseif equip:isKindOf("DefensiveHorse") and not self:isWeak(who) then
 					card = equip
 					break
-				elseif equip:isKindOf("Weapon") then card = equip break
 				elseif equip:isKindOf("Armor") and ((not self:isWeak(who)) or equip:isKindOf("SilverLion")) then
 					card = equip
 					break
@@ -40,9 +40,10 @@ local function card_for_qiaobian(self, who, return_prompt)
 				end
 
 				for _, friend in ipairs(self.friends) do
-					if not self:getSameEquip(card, friend) and friend:objectName() ~= who:objectName() and self:hasSkills(sgs.lose_equip_skill .. "|shensu" , friend) then
-						target = friend
-						break
+					if not self:getSameEquip(card, friend) and friend:objectName() ~= who:objectName() 
+						and self:hasSkills(sgs.need_equip_skill .. "|" .. sgs.lose_equip_skill, friend) then
+							target = friend
+							break
 					end
 				end
 				for _, friend in ipairs(self.friends) do
@@ -550,13 +551,16 @@ sgs.ai_skill_use_func.TiaoxinCard = function(card,use,self)
 	local targets = {}
 	for _, enemy in ipairs(self.enemies) do
 		if enemy:distanceTo(self.player) <= enemy:getAttackRange() and ((getCardsNum("Slash", enemy) < 1 and self.player:getHp() > 1)
-			or not self:canHit(self.player, enemy) or self:needLeiji(self.player, enemy)) and not enemy:isNude() and not self:doNotDiscard(enemy) then
+			or not self:canHit(self.player, enemy) or self:needLeiji(self.player, enemy) 
+			or self:getDamagedEffects(self.player, enemy, true) or self:needToLoseHp(self.player, enemy, true))
+			and not self:doNotDiscard(enemy) then
 				table.insert(targets, enemy)
 		end
 	end
 
 	if #targets == 0 then return end
 	
+	sgs.ai_use_priority.TiaoxinCard = 8
 	if not self.player:getArmor() and not self.player:isKongcheng() then
 		for _, card in sgs.qlist(self.player:getCards("h")) do
 			if card:isKindOf("Armor") and self:evaluateArmor(card) > 3 then
@@ -564,8 +568,6 @@ sgs.ai_skill_use_func.TiaoxinCard = function(card,use,self)
 				break
 			end
 		end
-	else
-		sgs.ai_use_priority.TiaoxinCard = 8
 	end
 
 	if use.to then
@@ -785,6 +787,14 @@ sgs.ai_skill_use_func.ZhijianCard = function(card, use, self)
 	local select_equip, target
 	for _, friend in ipairs(self.friends_noself) do
 		for _, equip in ipairs(equips) do
+			if not self:getSameEquip(equip, friend) and self:hasSkills(sgs.need_equip_skill .. "|" .. sgs.lose_equip_skill, friend) then
+				target = friend
+				select_equip = equip
+				break
+			end
+		end
+		if target then break end
+		for _, equip in ipairs(equips) do
 			if not self:getSameEquip(equip, friend) then
 				target = friend
 				select_equip = equip
@@ -813,8 +823,8 @@ sgs.ai_skill_invoke.guzheng = function(self, data)
 	if self:IsLihunTarget(self.player, data:toInt() - 1) then return false end
 	local player = self.room:getCurrent()
 	local invoke = (self:isFriend(player) and not (player:hasSkill("kongcheng") and player:isKongcheng())) 
-					or data:toInt() >= 3
-					or (data:toInt() == 2 and not self:hasSkills(sgs.cardneed_skill, player))
+					or (data:toInt() >= 3 and not self.player:hasSkill("manjuan"))
+					or (data:toInt() == 2 and not self:hasSkills(sgs.cardneed_skill, player) and not self.player:hasSkill("manjuan"))
 					or (self:isEnemy(player) and player:hasSkill("kongcheng") and player:isKongcheng())
 	return invoke
 end
@@ -925,7 +935,7 @@ sgs.ai_skill_askforag.guzheng = function(self, card_ids)
 		self:sortByKeepValue(new_cards)
 		local valueless, slash
 		for _, card in ipairs (new_cards) do
-			if card:isKindOf("Lightning") and not self:hasSkill("guicai|guidao", who) then
+			if card:isKindOf("Lightning") and not self:hasSkills(sgs.wizard_harm_skill, who) then
 				return card:getEffectiveId()
 			end
 			
@@ -1021,7 +1031,7 @@ function sgs.ai_skill_choice.huashen(self, choices)
 			for _, askill in ipairs(("qingnang|rende|jieyin|juejing|nosmiji"):split("|")) do
 				if str:matchOne(askill) then return askill end
 			end
-			if self.player:getHp() < 2 and self.player:getHandcardNum() == 1 then
+			if self.player:getHp() < 2 and self.player:getHandcardNum() == 1 and self:getCardsNum("Peach") == 0 then
 				if str:matchOne("shenzhi") then return "shenzhi" end
 			end
 			if str:matchOne("miji") and #self.friends > 1 then return "miji" end

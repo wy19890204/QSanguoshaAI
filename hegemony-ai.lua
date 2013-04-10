@@ -118,8 +118,12 @@ end
 sgs.ai_card_intention.ShushenCard = -80
 
 sgs.ai_skill_invoke.shenzhi = function(self, data)
-	return self.player:getHandcardNum() >= self.player:getHp() and self.player:getHandcardNum() <= self.player:getHp() + math.max(3, self.player:getHp())
-			and self.player:getLostHp() > 0 and self:getCardsNum("Peach") == 0
+	if self:getCardsNum("Peach") > 0 then return false end
+	if self.player:getHandcardNum() >= 3 then return false end
+	if self.player:getHandcardNum() >= self.player:getHp() and self.player:isWounded() then return true end
+	if self.player:hasSkill("beifa") and self.player:getHandcardNum() == 1 and self:needKongcheng() then return true end
+	if self.player:hasSkill("sijian") and self.player:getHandcardNum() == 1 then return true end
+	return false
 end
 
 function sgs.ai_cardneed.shenzhi(to, card)
@@ -425,6 +429,13 @@ sgs.ai_skill_use["@@shuangren"] = function(self, prompt)
 				end
 			end
 		end
+		for _, enemy in ipairs(self.enemies) do
+			if not (enemy:hasSkill("kongcheng") and enemy:getHandcardNum() == 1) and not enemy:isKongcheng() then
+				if  #(self:getTurnUse()) == 0 and self:getOverflow() > 0 and not self:doNotDiscard(enemy, "h") then
+					return "@ShuangrenCard=" .. max_card:getEffectiveId() .. "->" .. enemy:objectName()
+				end
+			end
+		end
 		if #self.enemies < 1 then return end
 		self:sort(self.friends_noself, "handcard")
 		for index = #self.friends_noself, 1, -1 do
@@ -471,7 +482,7 @@ xiongyi_skill.name = "xiongyi"
 table.insert(sgs.ai_skills, xiongyi_skill)
 xiongyi_skill.getTurnUseCard = function(self)
 	if self.player:getMark("@arise") < 1 then return end
-	if (#self.friends <= #self.enemies or sgs.turncount > 2 and self.player:getLostHp() > 0) or (sgs.turncount > 1 and self:isWeak()) then
+	if (#self.friends <= #self.enemies and sgs.turncount > 2 and self.player:getLostHp() > 0) or (sgs.turncount > 1 and self:isWeak()) then
 		return sgs.Card_Parse("@XiongyiCard=.") 
 	end
 end
