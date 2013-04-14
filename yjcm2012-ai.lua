@@ -474,7 +474,8 @@ sgs.ai_skill_invoke.lihuo = function(self, data)
 	if not sgs.ai_skill_invoke.Fan(self, data) then return false end
 	local use = data:toCardUse()
 	for _, player in sgs.qlist(use.to) do
-		if self:isEnemy(player) and self:damageIsEffective(player, sgs.DamageStruct_Fire) and sgs.isGoodTarget(player, self.enemies, self) then return true end
+		if self:isEnemy(player) and self:damageIsEffective(player, sgs.DamageStruct_Fire) and sgs.isGoodTarget(player, self.enemies, self) and
+			(player:hasArmorEffect("Vine") or player:isChained() and self:isGoodChainTarget(player)) then return true end
 	end
 	return false
 end
@@ -811,17 +812,7 @@ fuhun_skill.getTurnUseCard = function(self)
 	local jink_num = self:getCardsNum("Jink")
 	local null_num = self:getCardsNum("Nullification")
 	
-	local maxnumber = self.player:getMaxCards()
-	if self.player:hasSkill("yongsi") then
-		local kingdoms, kingdom_num = {}, 0
-		for _, ap in sgs.qlist(self.room:getAlivePlayers()) do
-			if not kingdoms[ap:getKingdom()] then
-				kingdoms[ap:getKingdom()] = true
-				kingdom_num = kingdom_num + 1
-			end
-		end
-		maxnumber = maxnumber - kingdom_num
-	end
+	local maxnumber = self:getOverflow(self.player, true)
 	
 	local can_dis_null = true
 	for _, friend in ipairs(self.friends_noself) do

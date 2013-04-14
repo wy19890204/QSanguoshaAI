@@ -834,7 +834,8 @@ end
 
 sgs.ai_use_value.YinlingCard = sgs.ai_use_value.Dismantlement + 1
 sgs.ai_use_priority.YinlingCard = sgs.ai_use_priority.Dismantlement + 1
-sgs.ai_card_intention.YinlingCard = sgs.ai_card_intention.Dismantlement
+
+sgs.ai_choicemade_filter.cardChosen.yinling = sgs.ai_choicemade_filter.cardChosen.snatch
 
 sgs.ai_skill_invoke.junwei = function(self, data)
 	return #self.enemies > 0
@@ -903,7 +904,7 @@ sgs.yinling_suit_value = {
 
 sgs.ai_skill_invoke.fenyong = function(self, data)
 	self.fenyong_choice = nil
-	if sgs.turncount == 0 and #self.enemies == 0 then return end
+	if sgs.turncount <= 1 and #self.enemies == 0 then return end
 
 	local current = self.room:getCurrent()
 	if not current or current:getPhase() >= sgs.Player_Finish then return true end
