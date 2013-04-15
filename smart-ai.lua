@@ -1125,15 +1125,23 @@ function SmartAI:objectiveLevel(player)
 		if player:isLord() then return -2 end
 
 		if self.role == "loyalist" and loyal_num == 1 and renegade_num == 0 then return 5 end
+		
 		if sgs.evaluatePlayerRole(player) == "neutral" then
-			local current_friend_num = 1
-			for _, aplayer in sgs.qlist(self.room:getOtherPlayers(self.player)) do
-				if sgs.evaluatePlayerRole(aplayer) == "loyalist" or sgs.evaluatePlayerRole(aplayer) == "renegade" then
+			local current_friend_num = 0
+			local current_enemy_num = 0
+			for _, aplayer in sgs.qlist(self.room:getAlivePlayers()) do
+				if sgs.evaluatePlayerRole(aplayer) == "loyalist" or sgs.evaluatePlayerRole(aplayer) == "renegade" or
+					aplayer:objectName() == self.player:objectName() then
 					current_friend_num = current_friend_num + 1
+				end
+				if sgs.ai_role[aplayer:objectName()] == "rebel" then
+					current_enemy_num = current_enemy_num + 1
 				end
 			end
 			if current_friend_num == loyal_num + renegade_num + 1 then
 				return 5
+			elseif current_enemy_num == rebel_num then
+				return -1
 			else
 				return 0
 			end
@@ -1186,15 +1194,22 @@ function SmartAI:objectiveLevel(player)
 	elseif self.role == "rebel" then
 	
 		if loyal_num ==0 and renegade_num ==0 then return player:isLord() and 5 or -2 end
+
 		if sgs.evaluatePlayerRole(player) == "neutral" then
-			local current_friend_num = 1
-			for _, aplayer in sgs.qlist(self.room:getOtherPlayers(self.player)) do
-				if sgs.ai_role[aplayer:objectName()] == "rebel" then
+			local current_friend_num = 0
+			local current_enemy_num = 0
+			for _, aplayer in sgs.qlist(self.room:getAlivePlayers()) do
+				if sgs.ai_role[aplayer:objectName()] == "rebel" or aplayer:objectName() == self.player:objectName() then
 					current_friend_num = current_friend_num + 1
+				end
+				if sgs.ai_role[aplayer:objectName()] == "renegade" or sgs.evaluatePlayerRole(aplayer) == "loyalist" then
+					current_enemy_num = current_enemy_num + 1
 				end
 			end
 			if current_friend_num == rebel_num then
 				return 5
+			elseif current_enemy_num == loyal_num + renegade_num + 1 then
+				return -1
 			else
 				return 0
 			end
@@ -1679,7 +1694,7 @@ function SmartAI:filterEvent(event, player, data)
 		local to = sgs.QList2Table(struct.to)
 		local who = to[1]
 		if sgs.turncount <= 1 and lord and who and from and from:objectName() == player:objectName() then
-			if sgs.evaluateRoleTrends(from) == "neutral" and card:isKindOf("YinlingCard") or card:isKindOf("FireAttack")
+			if sgs.evaluateRoleTrends(from) == "neutral" and (card:isKindOf("YinlingCard") or card:isKindOf("FireAttack")
 				or ((card:isKindOf("Dismantlement") or card:isKindOf("Snatch")) 
 					and not self:needToThrowArmor(who) and not who:hasSkills("tuntian+zaoxian") 
 					and not (who:getCards("j"):length() > 0 and not who:containsTrick("YanxiaoCard"))
@@ -1687,8 +1702,7 @@ function SmartAI:filterEvent(event, player, data)
 					and not (self:needKongcheng(who) and who:getHandcardNum() == 1))
 				or (card:isKindOf("Slash") and not (self:getDamagedEffects(who, player, true) or self:needToLoseHp(who, player, true, true))
 					and not ((who:hasSkill("leiji") or who:hasSkills("tuntian+zaoxian")) and getCardsNum("Jink", who) > 0))
-				or (card:isKindOf("Duel") and not (self:getDamagedEffects(who, player) or self:needToLoseHp(who, player, nil, true, true)))
-				or (card:isKindOf("IronChain") and not who:isChained() and not self:hasSkills("danlao|huangen|tianxiang", who)) then
+				or (card:isKindOf("Duel") and not (self:getDamagedEffects(who, player) or self:needToLoseHp(who, player, nil, true, true)))) then
 					local exclude_lord = #self:exclude({lord}, card, from) > 0
 					if CanUpdateIntention(from) and exclude_lord and sgs.evaluateRoleTrends(who) == "neutral" then sgs.updateIntention(from, lord, -10)
 					else sgs.updateIntention(from, who, 10)
@@ -5404,17 +5418,17 @@ function CanUpdateIntention(player)
 	local loyalist_num = sgs.current_mode_players["loyalist"] + sgs.current_mode_players["renegade"] + 1
 	
 	for _, aplayer in sgs.qlist(global_room:getAlivePlayers()) do
-		if sgs.ai_role[aplayer:objectName()] == "reble" then current_rebel_num = current_rebel_num + 1 end
+		if sgs.ai_role[aplayer:objectName()] == "rebel" then current_rebel_num = current_rebel_num + 1 end
 		if (sgs.evaluatePlayerRole(aplayer) == "loyalist" or sgs.ai_role[aplayer:objectName()] == "renegade") then
 			current_loyalist_num = current_loyalist_num + 1
 		end
 	end
 	
-	if sgs.ai_role[player:objectName()] == "reble" and current_rebel_num >= rebel_num then return false
+	if sgs.ai_role[player:objectName()] == "rebel" and current_rebel_num >= rebel_num then return false
 	elseif 	sgs.ai_role[player:objectName()] == "loyalist" and current_loyalist_num >= loyalist_num then return false
 	elseif 	sgs.ai_role[player:objectName()] == "neutral" and
 		(current_loyalist_num + 1 == loyalist_num or current_rebel_num + 1 >= rebel_num) then return false
-	end		
+	end
 	return true
 end
 
