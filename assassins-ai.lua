@@ -64,12 +64,13 @@ sgs.ai_skill_invoke.tianming = function(self, data)
 		end
 	end
 
+	local use_cards = {}
 	for index = #unpreferedCards, 1, -1 do
-		if self.player:isJilei(sgs.Sanguosha:getCard(unpreferedCards[index])) then table.remove(unpreferedCards, index) end
+		if not self.player:isJilei(sgs.Sanguosha:getCard(unpreferedCards[index])) then table.insert(use_cards, unpreferedCards[index]) end
 	end
 
-	if #unpreferedCards >= 2 or #unpreferedCards == #cards then
-		self.tianming_discard = unpreferedCards
+	if #use_cards >= 2 or #use_cards == #cards then
+		self.tianming_discard = use_cards
 		return true
 	end
 end
@@ -375,12 +376,11 @@ end
 
 sgs.ai_skill_invoke.duanzhi = function(self, data)
 	local use = data:toCardUse()
-	--[[
-	if self:isEnemy(use.from) and use.card:getSubtype() == "attack_card" and self.player:getHp() == 1 and not self:getCard("Peach") and not self:getCard("Analeptic") then
+	if self:isEnemy(use.from) and use.card:getSubtype() == "attack_card" and self.player:getHp() == 1 and not self:getCard("Peach")
+		and not self:getCard("Analeptic") and not isLord(self.player) and self:getAllPeachNum() == 0 then
+		self.player:setFlags("AI_doNotSave")
 		return true
 	end
-	]]--
-	if use.from and use.from:getCardCount(true) < 2 then return end
 	return use.from and self:isEnemy(use.from) and not self:doNotDiscard(use.from, "he", true, 2) and self.player:getHp() > 2
 end
 
@@ -408,10 +408,10 @@ sgs.ai_skill_use["@@fengyin"] = function(self, data)
 	local card_id = card:getEffectiveId()
 	
 	local target = self.room:getCurrent()
-	if self:isFriend(target) and target:containsTrick("indulgence") and target:getHandcardNum() + 2 > target:getHp() then
+	if self:isFriend(target) and self:willSkipPlayPhase(target) and target:getHandcardNum() + 2 > target:getHp() and target:getHp() >= self.player:getHp() then
 		return "@FengyinCard="..card_id
 	end
-	if self:isEnemy(target) and not target:containsTrick("indulgence") and target:getHandcardNum() >= target:getHp() then
+	if self:isEnemy(target) and not self:willSkipPlayPhase(target) and target:getHandcardNum() >= target:getHp() and target:getHp() >= self.player:getHp() then
 		return "@FengyinCard="..card_id
 	end
 	return "."

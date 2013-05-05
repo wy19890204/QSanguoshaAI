@@ -4,14 +4,26 @@ end
 
 sgs.ai_skill_invoke.zishou = function(self, data)
 	if self:needBear() then return true end
+	if self.player:isSkipped(sgs.Player_Play) then return true end
+	
 	local chance_value = 1
-	if (self.player:getHp() <= 2) then chance_value = chance_value + 1 end
-
 	local peach_num = self:getCardsNum("Peach")
-	local can_save_card_num = self.player:getMaxCards() - self.player:getHandcardNum()
-
-	return self.player:isSkipped(sgs.Player_Play)
-			or ((self.player:getLostHp() + 2) - can_save_card_num + peach_num  <= chance_value)
+	local can_save_card_num = self:getOverflow(self.player, true) - self.player:getHandcardNum()
+	
+	if self.player:getHp() <= 2 and self.player:getHp() < getBestHp(self.player) then chance_value = chance_value + 1 end
+	if self.player:hasSkill("rende") and self:findPlayerToDraw("noself") then chance_value = chance_value - 1 end
+	if self.player:hasSkill("qingnang") then
+		for _, friend in ipairs(self.friends) do
+			if friend:isWounded() then chance_value = chance_value - 1 break end
+		end
+	end
+	if self.player:hasSkill("jieyin") then
+		for _, friend in ipairs(self.friends) do
+			if friend:isWounded() and friend:isMale() then chance_value = chance_value - 1 break end
+		end
+	end
+	
+	return self:ImitateResult_DrawNCards(self.player, self.player:getVisibleSkillList()) - can_save_card_num + peach_num  <= chance_value
 end
 
 sgs.ai_skill_invoke.fuli = true
@@ -94,7 +106,7 @@ gongqi_skill.getTurnUseCard = function(self,inclusive)
 	for _, c in ipairs(handcards) do
 		if c:isKindOf("Weapon") then
 			has_weapon = true
-			if not weapon or self:evaluateWeapon(weapon) < self:evaluateArmor(c) then weapon = c end
+			if not weapon or self:evaluateWeapon(weapon) < self:evaluateWeapon(c) then weapon = c end
 		end
 		if c:isKindOf("Armor") then
 			has_armor = true
@@ -114,6 +126,7 @@ gongqi_skill.getTurnUseCard = function(self,inclusive)
 	
 	if self:getOverflow() > 0 and self:getCardsNum("Slash") >= 1 then
 		self:sortByKeepValue(handcards)
+		self:sort(self.enemies, "defense")
 		for _, c in ipairs(handcards) do
 			if c:isKindOf("Snatch") or c:isKindOf("Dismantlement") then
 				local use = { isDummy = true }
@@ -126,6 +139,7 @@ gongqi_skill.getTurnUseCard = function(self,inclusive)
 				or (c:isKindOf("Nullification") and self:getCardsNum("Nullification") < 2)
 				or (c:isKindOf("Slash") and self:getCardsNum("Slash") == 1) then
 				-- do nothing
+			elseif not c:isKindOf("EquipCard") and self.player:inMyAttackRange(self.enemies[1]) then
 			else
 				return sgs.Card_Parse("@GongqiCard=" .. c:getEffectiveId())
 			end
@@ -225,17 +239,17 @@ function sgs.ai_cardneed.jiefan(to, card)
 	return isCard("Slash", card, to) and getKnownCard(to, "Slash", true) == 0
 end
 
-anxu_skill={}
-anxu_skill.name="anxu"
-table.insert(sgs.ai_skills,anxu_skill)
-anxu_skill.getTurnUseCard=function(self)
+anxu_skill = {}
+anxu_skill.name = "anxu"
+table.insert(sgs.ai_skills, anxu_skill)
+anxu_skill.getTurnUseCard = function(self)
 	if self.player:hasUsed("AnxuCard") then return nil end
-	card=sgs.Card_Parse("@AnxuCard=.")
+	card = sgs.Card_Parse("@AnxuCard=.")
 	return card
 
 end
 
-sgs.ai_skill_use_func.AnxuCard=function(card,use,self)
+sgs.ai_skill_use_func.AnxuCard = function(card,use,self)
 	if #self.enemies == 0 then return end
 	local intention = 50
 	local friends = {}
@@ -278,7 +292,7 @@ sgs.ai_skill_use_func.AnxuCard=function(card,use,self)
 
 	local prior_enemy, kongcheng_enemy, manjuan_enemy
 	for _, enemy in ipairs(enemies) do
-		if enemy:getHandcardNum() >= 2 and self:hasSkills("jijiu|qingnang|xinzhan|leiji|jieyin|beige|kanpo|liuli|qiaobian|zhiheng|guidao|longhun|xuanfeng|tianxiang|lijian", enemy) then
+		if enemy:getHandcardNum() >= 2 and self:hasSkills(sgs.cardneed_skill, enemy) then
 			if not prior_enemy then prior_enemy = enemy end
 		end
 		if enemy:hasSkill("kongcheng") and enemy:isKongcheng() then
@@ -455,13 +469,16 @@ sgs.ai_skill_invoke.zhuiyi = function(self, data)
 end
 
 sgs.ai_skill_playerchosen.zhuiyi = function(self, targets)
+	local target
 	targets = sgs.QList2Table(targets)
 	self:sort(targets,"defense")
 	for _, friend in ipairs(targets) do
-		if self:isFriend(friend) and friend:isAlive() then
-			if not (friend:hasSkill("manjuan") and friend:getPhase() == sgs.Player_NotActive and friend:getLostHp() == 0) then return friend end
+		if self:isFriend(friend) and friend:isAlive() and not (friend:hasSkill("manjuan") and friend:getPhase() == sgs.Player_NotActive and friend:getLostHp() == 0) then
+			if isLord(friend) and self:isWeak(friend) then return friend end
+			if not target then target = friend end
 		end
 	end
+	if target then return target end
 end
 
 
@@ -601,8 +618,7 @@ qice_skill.getTurnUseCard = function(self)
 	local aoename = "savage_assault|archery_attack"
 	local aoenames = aoename:split("|")
 	local aoe
-	local i
-	local good, bad = 0, 0
+	local i	
 	local caocao = self.room:findPlayerBySkillName("jianxiong") 
 	local qicetrick = "savage_assault|archery_attack|ex_nihilo|god_salvation"
 	local qicetricks = qicetrick:split("|")
@@ -611,42 +627,28 @@ qice_skill.getTurnUseCard = function(self)
 		forbid = sgs.Sanguosha:cloneCard(forbiden, sgs.Card_NoSuit, 0)
 		if self.player:isLocked(forbid) then return end
 	end
-	if  self.player:hasUsed("QiceCard") then return end
-	for _, friend in ipairs(self.friends) do
-		if friend:isWounded() then
-			good = good + 10/(friend:getHp())
-			if friend:isLord() then good = good + 10/(friend:getHp()) end
-		end
-	end
-
-	for _, enemy in ipairs(self.enemies) do
-		if enemy:isWounded() then
-			bad = bad + 10/(enemy:getHp())
-			if enemy:isLord() then
-				bad = bad + 10/(enemy:getHp())
-			end
-		end
-	end
+	if self.player:hasUsed("QiceCard") then return end
 
 	for _,card in ipairs(cards)  do
 		table.insert(allcard, card:getId()) 
 	end
-
+	
+	local godsalvation = sgs.Sanguosha:cloneCard("god_salvation", sgs.Card_NoSuit, 0)
 	if self.player:getHandcardNum() < 3 then
 		for i=1, #aoenames do
 			local newqice = aoenames[i]
 			aoe = sgs.Sanguosha:cloneCard(newqice, sgs.Card_NoSuit, 0)
-			if self:getAoeValue(aoe) > -5 then
-				local parsed_card=sgs.Card_Parse("@QiceCard=" .. table.concat(allcard,"+") .. ":" .. newqice)
+			if self:getAoeValue(aoe) > 0 then
+				local parsed_card = sgs.Card_Parse("@QiceCard=" .. table.concat(allcard, "+") .. ":" .. newqice)
 				return parsed_card
 			end
 		end
-		if good > bad then
-			local parsed_card=sgs.Card_Parse("@QiceCard=" .. table.concat(allcard,"+") .. ":" .. "god_salvation")
+		if self:willUseGodSalvation(godsalvation) then
+			local parsed_card = sgs.Card_Parse("@QiceCard=" .. table.concat(allcard, "+") .. ":" .. "god_salvation")
 			return parsed_card
 		end
 		if self:getCardsNum("Jink") == 0 and self:getCardsNum("Peach") == 0 then
-			local parsed_card=sgs.Card_Parse("@QiceCard=" .. table.concat(allcard,"+") .. ":" .. "ex_nihilo")
+			local parsed_card = sgs.Card_Parse("@QiceCard=" .. table.concat(allcard, "+") .. ":" .. "ex_nihilo")
 			return parsed_card
 		end
 	end
@@ -656,23 +658,23 @@ qice_skill.getTurnUseCard = function(self)
 			local newqice = aoenames[i]
 			aoe = sgs.Sanguosha:cloneCard(newqice, sgs.Card_NoSuit, 0)
 			if self:getAoeValue(aoe) > 0 then
-				local parsed_card = sgs.Card_Parse("@QiceCard=" .. table.concat(allcard,"+") .. ":" .. newqice)
+				local parsed_card = sgs.Card_Parse("@QiceCard=" .. table.concat(allcard, "+") .. ":" .. newqice)
 				return parsed_card
 			end
 		end
-		if good > bad and self.player:isWounded() then
-			local parsed_card = sgs.Card_Parse("@QiceCard=" .. table.concat(allcard,"+") .. ":" .. "god_salvation")
+		if self:willUseGodSalvation(godsalvation) and self.player:isWounded() then
+			local parsed_card = sgs.Card_Parse("@QiceCard=" .. table.concat(allcard, "+") .. ":" .. "god_salvation")
 			return parsed_card
 		end
 		if self:getCardsNum("Jink") == 0 and self:getCardsNum("Peach") == 0 and self:getCardsNum("Analeptic") == 0 and self:getCardsNum("Nullification") == 0 then
-			local parsed_card=sgs.Card_Parse("@QiceCard=" .. table.concat(allcard,"+") .. ":" .. "ex_nihilo")
+			local parsed_card = sgs.Card_Parse("@QiceCard=" .. table.concat(allcard, "+") .. ":" .. "ex_nihilo")
 			return parsed_card
 		end
 	end
 	for i=1, #aoenames do
 		local newqice = aoenames[i]
 		aoe = sgs.Sanguosha:cloneCard(newqice, sgs.Card_NoSuit, 0)
-		if self:getAoeValue(aoe) > -5 and caocao and self:isFriend(caocao) and caocao:getHp()>1 and not caocao:containsTrick("indulgence")
+		if self:getAoeValue(aoe) > 0 and caocao and self:isFriend(caocao) and caocao:getHp() > 1 and not self:willSkipPlayPhase(caocao)
 		and not self.player:hasSkill("jueqing") and self:aoeIsEffective(aoe, caocao, self.player) then
 			local parsed_card = sgs.Card_Parse("@QiceCard=" .. table.concat(allcard,"+") .. ":" .. newqice)
 			return parsed_card
@@ -680,11 +682,11 @@ qice_skill.getTurnUseCard = function(self)
 	end
 	if self:getCardsNum("Jink") == 0 and self:getCardsNum("Peach") == 0 and self:getCardsNum("Analeptic") == 0 
 	and self:getCardsNum("Nullification") == 0 and self.player:getHandcardNum() <= 3 then
-		if good > bad and self.player:isWounded() then
-			local parsed_card = sgs.Card_Parse("@QiceCard=" .. table.concat(allcard,"+") .. ":" .. "god_salvation")
+		if self:willUseGodSalvation(godsalvation) and self.player:isWounded() then
+			local parsed_card = sgs.Card_Parse("@QiceCard=" .. table.concat(allcard, "+") .. ":" .. "god_salvation")
 			return parsed_card
 		end
-		local parsed_card = sgs.Card_Parse("@QiceCard=" .. table.concat(allcard,"+") .. ":" .. "ex_nihilo")
+		local parsed_card = sgs.Card_Parse("@QiceCard=" .. table.concat(allcard, "+") .. ":" .. "ex_nihilo")
 		return parsed_card
 	end
 end

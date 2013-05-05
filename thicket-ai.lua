@@ -1,11 +1,12 @@
 sgs.ai_skill_invoke.xingshang = true
 
-function SmartAI:toTurnOver(player, n) 
-	if not player then global_room:writeToConsole(debug.traceback()) return end			
+function SmartAI:toTurnOver(player, n)
+	if not player then global_room:writeToConsole(debug.traceback()) return end
+	n = n or 0
 	if (player:hasFlag("GuixinUsing") or player:hasFlag("ShenfenUsing")) and player:faceUp() then
 		return false
 	end
-	if n > 1 and player:hasSkill("jijiu") 
+	if n > 1 and player:hasSkill("jijiu")
 	  and not (player:hasSkill("manjuan") and player:getPhase() == sgs.Player_NotActive) then
 		return false
 	end
@@ -30,11 +31,11 @@ sgs.ai_skill_use["@@fangzhu"] = function(self, prompt)
 		end
 	end
 
-	if not target then		
+	if not target then
 		if n >= 3 then
 			target = self:findPlayerToDraw("noself", n)
 			if not target then
-				for _, enemy in ipairs(self.enemies) do									
+				for _, enemy in ipairs(self.enemies) do
 					if self:toTurnOver(enemy, n) and enemy:hasSkill("manjuan") and enemy:getPhase() == sgs.Player_NotActive then
 						target = enemy
 						break
@@ -42,15 +43,15 @@ sgs.ai_skill_use["@@fangzhu"] = function(self, prompt)
 				end
 			end	
 		else
-			self:sort(self.enemies, "chaofeng")		
-			for _, enemy in ipairs(self.enemies) do									
+			self:sort(self.enemies, "chaofeng")
+			for _, enemy in ipairs(self.enemies) do
 				if self:toTurnOver(enemy, n) and enemy:hasSkill("manjuan") and enemy:getPhase() == sgs.Player_NotActive then
 					target = enemy
 					break
 				end
 			end
 			if not target then
-				for _, enemy in ipairs(self.enemies) do									
+				for _, enemy in ipairs(self.enemies) do
 					if self:toTurnOver(enemy, n) and self:hasSkills(sgs.priority_skill, enemy) then
 						target = enemy
 						break
@@ -58,8 +59,8 @@ sgs.ai_skill_use["@@fangzhu"] = function(self, prompt)
 				end
 			end
 			if not target then
-				for _, enemy in ipairs(self.enemies) do		
-					if self:toTurnOver(enemy, n) then					
+				for _, enemy in ipairs(self.enemies) do
+					if self:toTurnOver(enemy, n) then
 						target = enemy
 						break
 					end
@@ -392,9 +393,10 @@ sgs.ai_skill_use["@@yinghun"] = function(self, prompt)
 end
 
 sgs.ai_card_intention.YinghunCard = function(self, card, from, tos, source)
-	local intention = -80
-	if from:hasFlag("yinghun_to_enemy") then intention = -intention end
-	if tos[1]:hasSkill("manjuan") then intention = -intention end
+	local intention = -10
+	if from:getState() ~= "robot" and from:getLostHp() > 1 then intention = 0 end
+	if from:hasFlag("yinghun_to_enemy") then intention = 10 end
+	if tos[1]:hasSkill("manjuan") then intention = 10 end
 	sgs.updateIntention(from, tos[1], intention)
 end
 
@@ -759,7 +761,7 @@ sgs.ai_skill_choice.benghuai = function(self, choices, data)
 			return "hp"
 		end
 	end
-	if self.player:getMaxHp() >= self.player:getHp() + 2 then
+	if self.player:getMaxHp() >= self.player:getHp() + 2 and (not ((self.player:hasSkill("nosmiji") or (self.player:hasSkill("miji") and #self.friends > 1)) and (self.player:getHp() > 1 or (self:getCardsNum("Peach") + self:getCardsNum("Analeptic") > 0)) and self.player:getMaxHp() > 5)) then
 		return "maxhp"
 	else
 		return "hp"

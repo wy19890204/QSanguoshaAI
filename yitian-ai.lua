@@ -238,8 +238,15 @@ sgs.ai_skill_use_func.JuejiCard = function(card, use, self)
 	return
 end
 
-sgs.ai_card_intention.JuejiCard = 30
 sgs.ai_use_priority.JuejiCard = 3.4
+sgs.ai_card_intention.JuejiCard = function(self, card, from, tos)
+	local intention = 10
+	local to = tos[1]
+	if self:needKongcheng(to) and to:getHandcardNum() == 1 then
+		intention = 0
+	end
+	sgs.updateIntention(from, tos[1], intention)
+end
 sgs.ai_cardneed.jueji = sgs.ai_cardneed.bignumber
 sgs.dynamic_value.control_card.JuejiCard = true
 
@@ -298,8 +305,19 @@ end
 ]]--
 sgs.ai_skill_choice.wuling = function(self, choices)
 	if choices:match("water") then
-		self:sort(self.friends, "hp")
-		if self:isWeak(self.friends[1]) then return "water" end
+		local weak_friend, weak_enemy = 0, 0
+		for _, player in sgs.qlist(self.room:getAlivePlayers()) do
+			if self:isWeak(player) then
+				if self:isEnemy(player) then 
+					weak_enemy = weak_enemy + 1
+					if player:isLord() then weak_enemy = weak_enemy + 1 end
+				elseif self:isFriend(player) then
+					weak_friend = weak_friend + 1
+					if player:isLord() then weak_friend = weak_friend + 1 end
+				end
+			end
+		end
+		if weak_friend > 0 and weak_friend >= weak_enemy then return "water" end
 	end
 	if choices:match("earth") then
 		if #(self:getChainedFriends()) > #(self:getChainedEnemies()) and
@@ -382,10 +400,10 @@ end
 sgs.ai_skill_invoke.lianli_jink = function(self, data)
 	local tied
 	for _, player in sgs.qlist(self.room:getOtherPlayers(self.player)) do
-		if player:getMark("@tied")>0 then tied = player break end
+		if player:getMark("@tied") > 0 then tied = player break end
 	end
 	if self:isEquip("EightDiagram", tied) then return true end
-	return self:getCardsNum("Jink")==0
+	return self:getCardsNum("Jink") == 0
 end
 
 sgs.ai_choicemade_filter.skillInvoke["lianli-jink"] = function(player, promptlist)
@@ -408,10 +426,25 @@ sgs.ai_skill_cardask["@lianli-jink"] = function(self)
 	local players = self.room:getOtherPlayers(self.player)
 	local target
 	for _, p in sgs.qlist(players) do
-		if p:getMark("@tied")>0 then target = p break end
+		if p:getMark("@tied") > 0 then target = p break end
 	end
 	if not self:isFriend(target) then return "." end
 	return self:getCardId("Jink") or "."
+end
+
+function sgs.ai_slash_prohibit.lianli(self, to, card, from)
+	if self:isFriend(to) then return false end
+	if self:canLiegong(to, from) then return false end
+	local players = sgs.QList2Table(self.room:getOtherPlayers(to))
+	for _, player in ipairs(players) do
+		if player:getMark("@tied") > 0 and self:isFriend(player, to) then
+			if player:hasSkill("tiandu") and sgs.ai_slash_prohibit.tiandu(self, player) then return true end
+			if player:hasLordSkill("hujia") and sgs.ai_slash_prohibit.hujia(self, player) then return true end
+			if player:hasSkill("leiji") and sgs.ai_slash_prohibit.leiji(self, player) then return true end
+			if player:hasSkill("weidi") and sgs.ai_slash_prohibit.weidi(self, player) then return true end
+		end
+	end
+	return false	
 end
 
 local lianli_slash_skill={name="lianli-slash"}
@@ -453,6 +486,7 @@ sgs.ai_skill_cardask["@lianli-slash"] = function(self)
 	if not self:isFriend(target) then return "." end
 	return self:getCardId("Slash") or "."
 end
+
 --[[
 	技能：同心
 	描述：处于连理状态的两名角色，每受到一点伤害，你可以令你们两人各摸一张牌 
@@ -577,7 +611,11 @@ function sgs.ai_skill_choice.shenjun(self, choices)
 		end
 		gender = (male < #self.enemies - male)
 	else
-		gender = (sgs.Sanguosha:getSkill("shenjun"):getDefaultChoice(self.player) == "male")	
+		local males = 0
+		for _, player in sgs.qlist(self.room:getAlivePlayers()) do
+			if player:isMale() then males = males + 1 end
+		end
+		gender = (males <= self.player:aliveCount() - males)
 	end
 	if self.player:getSeat() < self.room:alivePlayerCount()/2 then gender = not gender end
 	if gender then return "male" else return "female" end
@@ -793,27 +831,35 @@ end
 	技能：争功
 	描述：其他角色的回合开始前，若你的武将牌正面向上，你可以将你的武将牌翻面并立即进入你的回合，你的回合结束后，进入该角色的回合 
 ]]--
-sgs.ai_skill_invoke.zhenggong  = true
+sgs.ai_skill_invoke.zhenggong = function(self, data)
+	if sgs.turncount <= 1 and #self.enemies == 0 then return false end
+	return true
+end
+
 --[[
 	技能：偷渡
 	描述：当你的武将牌背面向上时若受到伤害，你可以弃置一张手牌并将你的武将牌翻面，视为对一名其他角色使用了一张【杀】
 ]]--
-sgs.ai_skill_invoke.toudu = function(self, data)
-	if #self.enemies > 0 then
-		return true
+sgs.ai_skill_cardask['@toudu'] = function(self, data, pattern, target, target2)
+	self.toudu_target = nil
+	local targets = sgs.SPlayerList()
+	for _, p in sgs.qlist(self.room:getOtherPlayers(self.player)) do
+		if self.player:canSlash(p, nil, false) then targets:append(p) end
 	end
-	local slash = sgs.Sanguosha:cloneCard("slash", sgs.Card_NoSuit, 0)
-	for _,p in pairs(self.friends_noself) do --实在没办法了，如果杀无效，也可以对自己的队友发动
-		if not self:slashProhibit(slash, p) then
-			if not self:slashIsEffective(slash, target) then
-				return true
-			end
-		end
+	if targets:length() == 0 then return "." end
+	self.toudu_target = sgs.ai_skill_playerchosen.zero_card_as_slash(self, targets)
+	if not self.toudu_target then return "." end
+	local cards = sgs.QList2Table(self.player:getHandcards())
+	self:sortByKeepValue(cards)
+	for _, card in ipairs(cards) do
+		if not (isCard("Peach", card, self.player) and self:isFriend(self.toudu_target)) then return card:getEffectiveId() end
 	end
-	return false
+	return "."
 end
 
 sgs.ai_skill_playerchosen.toudu = function(self, targets)
+	if self.toudu_target then return self.toudu_target end
+	
 	local slash = sgs.Sanguosha:cloneCard("slash", sgs.Card_NoSuit, 0)
 	local targetlist = {}
 	for _,p in sgs.qlist(targets) do
@@ -839,29 +885,56 @@ sgs.ai_skill_playerchosen.toudu = function(self, targets)
 	end
 	return targetlist[#targetlist]
 end
+
+sgs.ai_need_damaged.toudu = function(self, attacker, player)
+	if not player:hasSkill("toudu") then return false end
+	local peaches = getCardsNum("Peach", player)
+	if peaches >= player:getLostHp() and peaches > 0 then return true end
+	if self.player:objectName() == player:objectName() and player:getHp() > 1 then
+		local targets = sgs.SPlayerList()
+		for _, p in sgs.qlist(self.room:getOtherPlayers(self.player)) do
+			if self.player:canSlash(p, nil, false) then targets:append(p) end
+		end
+		if targets:length() == 0 then return false end
+		local target = sgs.ai_skill_playerchosen.zero_card_as_slash(self, targets)
+		if target and (target:getHp() == 1 or self:hasHeavySlashDamage(player, nil, tareget) and target:getHp() == 2) then return true end
+	end
+	return false
+end
+	
 --[[
 	技能：义舍
 	描述：出牌阶段，你可将任意数量手牌正面朝上移出游戏称为“米”（至多存在五张）或收回；其他角色在其出牌阶段可选择一张“米”询问你，若你同意，该角色获得这张牌，每阶段限两次 
 ]]--
 local yishe_skill = {name = "yishe"}
-table.insert(sgs.ai_skills,yishe_skill)
+table.insert(sgs.ai_skills, yishe_skill)
 yishe_skill.getTurnUseCard = function(self)
 	if self:needBear() then return end
 	return sgs.Card_Parse("@YisheCard=.")
 end
 
-sgs.ai_skill_use_func.YisheCard=function(card,use,self)
+sgs.ai_skill_use_func.YisheCard = function(card, use, self)
+	sgs.ai_use_priority.YisheCard = 10
 	if self.player:getPile("rice"):isEmpty() then
+		sgs.ai_use_priority.YisheCard = 0
+		local n = self.player:getHandcardNum()
+		if n < 1 then return end
 		local cards = self.player:getHandcards()
 		cards = sgs.QList2Table(cards)
 		local usecards = {}
 		local getOverflow = math.max(self:getOverflow(), 0)
-		local discards = self:askForDiscard("yishe", math.min(getOverflow, 5-#usecards), math.min(getOverflow, 5-#usecards))
-		for _,card in ipairs(discards) do
-			table.insert(usecards,card)
+		local discards = self:askForDiscard("dummyreason", math.min(getOverflow, 5), math.min(getOverflow, 5))
+		if self:needKongcheng() and n < 6 then
+			for _, card in ipairs(cards) do
+				table.insert(usecards, card:getId())
+			end
+		else
+			for _, card in ipairs(discards) do
+				table.insert(usecards, card)
+			end
 		end
 		if #usecards > 0 then
-			use.card = sgs.Card_Parse("@YisheCard=" .. table.concat(usecards,"+"))
+			use.card = sgs.Card_Parse("@YisheCard=" .. table.concat(usecards, "+"))
 		end
 	else
 		if not self.player:hasUsed("YisheCard") then use.card = card return end
@@ -873,15 +946,15 @@ sgs.ai_skill_choice.yisheask = function(self,choices)
 	if self:isFriend(self.room:getCurrent()) then return "allow" else return "disallow" end
 end
 
-local yisheask_skill={name="yisheask"}
-table.insert(sgs.ai_skills,yisheask_skill)
+local yisheask_skill = {name = "yisheask"}
+table.insert(sgs.ai_skills, yisheask_skill)
 yisheask_skill.getTurnUseCard = function(self)
 	for _, player in sgs.qlist(self.room:getOtherPlayers(self.player)) do
 		if player:hasSkill("yishe") and not player:getPile("rice"):isEmpty() then return sgs.Card_Parse("@YisheAskCard=.") end
 	end
 end
 
-sgs.ai_skill_use_func.YisheAskCard=function(card,use,self)
+sgs.ai_skill_use_func.YisheAskCard = function(card, use, self)
 	if self.player:usedTimes("YisheAskCard")>1 then return end
 	local zhanglu
 	local cards

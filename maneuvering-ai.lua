@@ -118,6 +118,7 @@ function sgs.ai_armor_value.Vine(player, self)
 	end
 	if self:hasSkills(sgs.lose_equip_skill, player) then return 3.8 end
 	if not self:damageIsEffective(player, sgs.DamageStruct_Fire) then return 6 end
+	if self.player:hasSkill("sizhan") then return 4.9 end
 	if player:hasSkill("jujian") and not player:getArmor() and #(self:getFriendsNoself(player)) > 0 and player:getPhase() == sgs.Player_Play then return 3 end
 	if player:hasSkill("diyyicong") and not player:getArmor() and player:getPhase() == sgs.Player_Play then return 3 end
 
@@ -219,12 +220,16 @@ function SmartAI:useCardSupplyShortage(card, use)
 	local zhanghe_seat = zhanghe and zhanghe:faceUp() and not zhanghe:isKongcheng() and not self:isFriend(zhanghe) and zhanghe:getSeat() or 0
 	
 	local sb_daqiao = self.room:findPlayerBySkillName("yanxiao")
-	local yanxiao = sb_daqiao and not self:isFriend(sb_daqiao) and (getKnownCard(sb_daqiao, "diamond", nil, "he") > 0 or sb_daqiao:getHandcardNum() > 3)
+	local yanxiao = sb_daqiao and not self:isFriend(sb_daqiao) and sb_daqiao:faceUp() and
+					(getKnownCard(sb_daqiao, "diamond", nil, "he") > 0
+					or sb_daqiao:getHandcardNum() + self:ImitateResult_DrawNCards(sb_daqiao, sb_daqiao:getVisibleSkillList()) > 3
+					or sb_daqiao:containsTrick("YanxiaoCard"))
 
 	if #enemies == 0 then return end
 
 	local getvalue = function(enemy)
 		if enemy:containsTrick("supply_shortage") or enemy:containsTrick("YanxiaoCard") then return -100 end
+		if enemy:getMark("juao") > 0 then return -100 end
 		if enemy:hasSkill("qiaobian") and not enemy:containsTrick("supply_shortage") and not enemy:containsTrick("indulgence") then return -100 end
 		if zhanghe_seat > 0 and (self:playerGetRound(zhanghe) <= self:playerGetRound(enemy) and self:enemiesContainsTrick() <= 1 or not enemy:faceUp()) then
 			return - 100 end
@@ -397,10 +402,10 @@ end
 sgs.ai_card_intention.IronChain=function(self, card, from, tos)
 	local lord = getLord(from)
 	local updated
-	local contains_lord = lord and (#tos == 2 and (isLord(tos[1]) or isLord(tos[2]))) or (#tos == 1 and isLord(tos[1]))
+	local contains_lord = lord and (#tos == 2 and (isLord(tos[1]) or isLord(tos[2])) or #tos == 1 and isLord(tos[1]))
 	if not contains_lord and #self:exclude({lord}, card, from) > 0 and CanUpdateIntention(from) and sgs.turncount <= 1 then
 		for _, to in ipairs(tos) do
-			if sgs.ai_role[to:objectName()] == "neutral" then
+			if not to:isChained() and sgs.ai_role[to:objectName()] == "neutral" and to:objectName() ~= from:objectName() then
 				updated = true
 				sgs.updateIntention(from, lord, -10)
 			end
@@ -540,7 +545,7 @@ function SmartAI:useCardFireAttack(fire_attack, use)
 			local flag=string.format("%s_%s_%s","visible",self.player:objectName(),enemy:objectName())
 			if handcards[1]:hasFlag("visible") or handcards[1]:hasFlag(flag) then
 				local suitstring = handcards[1]:getSuitString()
-				if not lack[suitstring] then
+				if not lack[suitstring] and not table.contains(targets, enemy) then
 					table.insert(targets, enemy)
 				end
 			end
